@@ -328,15 +328,16 @@ FREE_MODELS_NO_AUTH = {
     ],
 }
 
-NOT_LOGGED_IN_EMBED = discord.Embed(
-    title="🔒 Account required",
-    description=(
-        "This command requires a Pollinations account.\n\n"
-        "**→ Use `/connect` to link your account for free**\n"
-        "[enter.pollinations.ai](https://enter.pollinations.ai)"
-    ),
-    color=0xED4245
-)
+def not_logged_in_embed():
+    return discord.Embed(
+        title="🔒 Account required",
+        description=(
+            "This command requires a Pollinations account.\n\n"
+            "**→ Use `/connect` to link your account for free**\n"
+            "[enter.pollinations.ai](https://enter.pollinations.ai)"
+        ),
+        color=0xED4245
+    )
 
 def available_models(tipo: str, user_id: int) -> list:
     """Tutti i modelli se l'utente ha account, solo quelli pubblici altrimenti."""
@@ -698,7 +699,6 @@ async def on_message(message: discord.Message):
                         reply = await resp.text()
 
             history.append({"role": "assistant", "content": reply})
-            # Risposta come testo normale, non embed
             if len(reply) <= 2000:
                 await message.channel.send(reply)
             else:
@@ -834,7 +834,7 @@ async def cmd_video(interaction: discord.Interaction, prompt: str):
 async def cmd_model(interaction: discord.Interaction, type: str, name: str):
     uid = interaction.user.id
     if not has_personal_key(uid):
-        await interaction.response.send_message(embed=NOT_LOGGED_IN_EMBED, ephemeral=True)
+        await interaction.response.send_message(embed=not_logged_in_embed(), ephemeral=True)
         return
     key = get_key(uid)
 
@@ -876,7 +876,7 @@ async def cmd_model(interaction: discord.Interaction, type: str, name: str):
 async def cmd_models(interaction: discord.Interaction, type: str = "all"):
     uid = interaction.user.id
     if not has_personal_key(uid):
-        await interaction.response.send_message(embed=NOT_LOGGED_IN_EMBED, ephemeral=True)
+        await interaction.response.send_message(embed=not_logged_in_embed(), ephemeral=True)
         return
     tipi = [type] if type != "all" else ["text", "image", "audio", "video"]
     embed = discord.Embed(title="📋 Nov - Available Models", color=BOT_COLOR)
