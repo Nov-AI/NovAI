@@ -154,10 +154,10 @@ MODEL_DISPLAY_TO_ID = {
     "Sage":                               "sage",
     "Verse":                              "verse",
     # FREE (box verde)
-    "Whisper Large V3":                   "whisper",
-    "AssemblyAI Universal-2":             "universal-2",
-    "AssemblyAI Universal-3 Pro":         "universal-3-pro",
-    "ACE-Step 1.5 Turbo":                 "acestep",
+    "Whisper Large V3":                    "whisper",
+    "AssemblyAI Universal-2":              "universal-2",
+    "AssemblyAI Universal-3 Pro":          "universal-3-pro",
+    "ACE-Step 1.5 Turbo":                  "acestep",
     # PAID (box gialla)
     "Scribe v2 (PAID)":                   "scribe",
     "ElevenLabs v3 TTS (PAID)":           "elevenlabs",
@@ -233,19 +233,24 @@ KNOWN_MODELS = {
         "Qwen Image Plus (PAID)",
     ],
     "audio": [
-        # TTS voices OpenAI (parametro voice)
+        # Voci TTS OpenAI — gratuite via /v1/audio/speech
         "Nova", "Alloy", "Echo", "Fable", "Onyx", "Shimmer",
         "Ash", "Ballad", "Coral", "Sage", "Verse",
-        # FREE (box verde)
-        "Whisper Large V3", "AssemblyAI Universal-2",
-        "AssemblyAI Universal-3 Pro", "ACE-Step 1.5 Turbo",
-        # PAID (box gialla)
+        # FREE (numero verde dashboard)
+        "AssemblyAI Universal-2",
+        "Whisper Large V3",
+        "ACE-Step 1.5 Turbo",
+        "AssemblyAI Universal-3 Pro",
+        # PAID (numero giallo dashboard)
         "Scribe v2 (PAID)",
-        "ElevenLabs v3 TTS (PAID)", "ElevenLabs Flash v2.5 (PAID)",
-        "ElevenLabs Multilingual v2 (PAID)", "ElevenLabs Music (PAID)",
-        "ElevenLabs Sound Effects (PAID)",
         "Qwen3-TTS Flash (PAID)", "Qwen3-TTS Instruct (PAID)",
-        "Stable Audio 3 Medium (PAID)", "Stable Audio 3 Large (PAID)",
+        "ElevenLabs Flash v2.5 (PAID)",
+        "ElevenLabs Sound Effects (PAID)",
+        "ElevenLabs v3 TTS (PAID)",
+        "ElevenLabs Multilingual v2 (PAID)",
+        "Stable Audio 3 Medium (PAID)",
+        "ElevenLabs Music (PAID)",
+        "Stable Audio 3 Large (PAID)",
     ],
     "video": [
         # FREE (box verde)
@@ -764,10 +769,16 @@ async def cmd_image(interaction: discord.Interaction, prompt: str, size: str = "
 @bot.tree.command(name="audio", description="Convert text to speech")
 @app_commands.describe(text="Text to convert to audio")
 async def cmd_audio(interaction: discord.Interaction, text: str):
-    if not has_personal_key(interaction.user.id):
-        await interaction.response.send_message(embed=no_key_embed(), ephemeral=True)
+    uid = interaction.user.id
+    voice_name = USER_MODELS.get(uid, {}).get("audio", DEFAULT_MODELS["audio"])
+    FREE_VOICES = ["Nova", "Alloy", "Echo", "Fable", "Onyx", "Shimmer",
+                   "Ash", "Ballad", "Coral", "Sage", "Verse",
+                   "AssemblyAI Universal-2", "Whisper Large V3",
+                   "ACE-Step 1.5 Turbo", "AssemblyAI Universal-3 Pro"]
+    if voice_name not in FREE_VOICES and not has_personal_key(uid):
+        await interaction.response.send_message(embed=not_logged_in_embed(), ephemeral=True)
         return
-    key = get_key(interaction.user.id)
+    key = get_key(uid)
 
     await interaction.response.defer(thinking=True)
     voice = get_model(interaction.user.id, "audio")
@@ -802,11 +813,11 @@ async def cmd_video(interaction: discord.Interaction, prompt: str):
 
     try:
         async with aiohttp.ClientSession() as session:
-            data    = await api_post_json(session, f"{BASE_URL}/video/generations", {"model": model, "prompt": prompt}, key)
-            vid_url = data.get("data", [{}])[0].get("url", "")
-            if not vid_url:
-                raise Exception("No video URL returned")
-            vid_bytes = await api_get_bytes(session, vid_url)
+            encoded = urllib.parse.quote(prompt)
+            vid_url_req = f"https://gen.pollinations.ai/video/{encoded}?model={model}"
+            async with session.get(vid_url_req, headers=auth_headers(key)) as resp:
+                resp.raise_for_status()
+                vid_bytes = await resp.read()
 
         file  = discord.File(fp=io.BytesIO(vid_bytes), filename="nov_video.mp4")
         embed = discord.Embed(color=BOT_COLOR)
@@ -878,7 +889,20 @@ async def cmd_model(interaction: discord.Interaction, type: str, name: str):
 async def cmd_models(interaction: discord.Interaction, type: str = "all"):
     uid = interaction.user.id
     if not has_personal_key(uid):
-        await interaction.response.send_message(embed=not_logged_in_embed(), ephemeral=True)
+        # Mostra solo testo e immagini gratis + voci TTS gratis
+        embed = discord.Embed(
+            title="📋 Nov - Available Models",
+            description="🔓 *Free models only — `/connect` to unlock all*",
+            color=BOT_COLOR
+        )
+        for t in ["text", "image"]:
+            lista = "\n".join(f"`{m}`" for m in FREE_MODELS_NO_AUTH.get(t, []))
+            embed.add_field(name=f"{TYPE_EMOJI[t]} {t.capitalize()}", value=lista or "*none*", inline=False)
+        voices = "\n".join(f"`{v}`" for v in ["Nova","Alloy","Echo","Fable","Onyx","Shimmer","Ash","Ballad","Coral","Sage","Verse"])
+        embed.add_field(name="🔊 Audio (TTS voices)", value=voices, inline=False)
+        embed.add_field(name="🎬 Video", value="🔒 Requires account — `/connect`", inline=False)
+        embed.set_footer(text="/connect to unlock paid models, video and more")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
         return
     tipi = [type] if type != "all" else ["text", "image", "audio", "video"]
     embed = discord.Embed(title="📋 Nov - Available Models", color=BOT_COLOR)
