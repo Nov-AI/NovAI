@@ -331,11 +331,8 @@ FREE_MODELS_NO_AUTH = {
 NOT_LOGGED_IN_EMBED = discord.Embed(
     title="🔒 Account required",
     description=(
-        "This command requires a Pollinations account.
-
-"
-        "**→ Use `/connect` to link your account for free**
-"
+        "This command requires a Pollinations account.\n\n"
+        "**→ Use `/connect` to link your account for free**\n"
         "[enter.pollinations.ai](https://enter.pollinations.ai)"
     ),
     color=0xED4245
