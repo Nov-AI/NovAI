@@ -2071,59 +2071,62 @@ _SN_COLS  = 10
 
 
 class SnakeView(discord.ui.View):
+    """
+    Snake auto-move: il serpente avanza da solo ogni _BASE_SPEED secondi.
+    I bottoni cambiano solo direzione (defer silenzioso → nessun flash).
+    La velocità aumenta ogni 3 punti.
+    """
+    _BASE_SPEED = 0.9   # secondi per tick iniziale
+    _MIN_SPEED  = 0.35  # velocità massima
+
     def __init__(self, player: discord.Member | discord.User):
-        super().__init__(timeout=300)   # 5 min di inattività
+        super().__init__(timeout=300)
         self.player    = player
-        self.snake     = [(4, 5), (4, 4), (4, 3)]  # (row, col)
-        self.direction = (0, 1)   # → destra
+        self.snake     = [(4, 5), (4, 4), (4, 3)]
+        self.direction = (0, 1)    # → destra
         self._next_dir = (0, 1)
         self.food      = self._spawn_food()
         self.score     = 0
         self.alive     = True
+        self._msg: discord.Message | None = None
+        self._task: asyncio.Task | None   = None
 
-    # ── helpers ──
+    # ── avvio ──
+    async def start(self, msg: discord.Message):
+        self._msg  = msg
+        self._task = asyncio.create_task(self._loop())
+
+    # ── game loop (auto-movimento) ──
+    async def _loop(self):
+        while self.alive:
+            speed = max(self._MIN_SPEED, self._BASE_SPEED - self.score * 0.04)
+            await asyncio.sleep(speed)
+            if not self.alive:
+                break
+            self._tick()
+            try:
+                await self._msg.edit(embed=self._make_embed(), view=self)
+            except (discord.NotFound, discord.HTTPException):
+                break
+            except Exception:
+                pass
+
+    # ── meccanica ──
     def _spawn_food(self) -> tuple[int, int]:
         while True:
             pos = (random.randint(0, _SN_ROWS - 1), random.randint(0, _SN_COLS - 1))
             if pos not in self.snake:
                 return pos
 
-    def _render(self) -> str:
-        grid = [[_SN_EMPTY] * _SN_COLS for _ in range(_SN_ROWS)]
-        grid[self.food[0]][self.food[1]] = _SN_FOOD
-        for i, (r, c) in enumerate(self.snake):
-            grid[r][c] = _SN_HEAD if i == 0 else _SN_BODY
-        return "\n".join("".join(row) for row in grid)
-
-    def _make_embed(self) -> discord.Embed:
-        if self.alive:
-            e = discord.Embed(
-                title=f"🐍 Snake  —  Score: {self.score}",
-                description=self._render(),
-                color=0x57F287
-            )
-        else:
-            e = discord.Embed(
-                title=f"💀 Game Over  —  Score: {self.score}",
-                description=self._render(),
-                color=0xED4245
-            )
-        e.set_footer(text=f"{self.player.display_name}  •  ⬆️⬇️⬅️➡️ to move  •  🛑 to quit")
-        return e
-
     def _tick(self):
-        """Avanza di un passo nella direzione corrente."""
         self.direction = self._next_dir
-        dr, dc  = self.direction
-        hr, hc  = self.snake[0]
-        new_h   = (hr + dr, hc + dc)
-
-        # Muri o auto-collisione
+        dr, dc = self.direction
+        hr, hc = self.snake[0]
+        new_h  = (hr + dr, hc + dc)
         if not (0 <= new_h[0] < _SN_ROWS and 0 <= new_h[1] < _SN_COLS) or new_h in self.snake:
             self.alive = False
-            self._lock_buttons()
+            self._disable_dir_buttons()
             return
-
         self.snake.insert(0, new_h)
         if new_h == self.food:
             self.score += 1
@@ -2132,15 +2135,57 @@ class SnakeView(discord.ui.View):
             self.snake.pop()
 
     def _set_dir(self, dr: int, dc: int):
-        """Imposta la direzione evitando il reverse."""
+        # Impedisce il reverse
         if (dr, dc) != (-self.direction[0], -self.direction[1]):
             self._next_dir = (dr, dc)
 
-    def _lock_buttons(self):
+    # ── render ──
+    def _render(self) -> str:
+        grid = [[_SN_EMPTY] * _SN_COLS for _ in range(_SN_ROWS)]
+        grid[self.food[0]][self.food[1]] = _SN_FOOD
+        for i, (r, c) in enumerate(self.snake):
+            grid[r][c] = _SN_HEAD if i == 0 else _SN_BODY
+        return "\n".join("".join(row) for row in grid)
+
+    def _make_embed(self) -> discord.Embed:
+        speed_pct = int((1 - (max(self._MIN_SPEED, self._BASE_SPEED - self.score * 0.04) - self._MIN_SPEED)
+                         / (self._BASE_SPEED - self._MIN_SPEED)) * 100)
+        if self.alive:
+            e = discord.Embed(
+                title=f"🐍 Snake  —  Score: {self.score}  |  Speed: {speed_pct}%",
+                description=self._render(),
+                color=0x57F287
+            )
+        else:
+            e = discord.Embed(
+                title=f"💀 Game Over  —  Final Score: {self.score}",
+                description=self._render(),
+                color=0xED4245
+            )
+        e.set_footer(text=f"{self.player.display_name}  •  buttons = steer  •  🛑 = quit")
+        return e
+
+    # ── pulizia ──
+    def _disable_dir_buttons(self):
         for child in self.children:
-            if isinstance(child, discord.ui.Button) and child.custom_id != "sn_quit":
+            if isinstance(child, discord.ui.Button) and child.emoji and str(child.emoji) != "🛑":
                 child.disabled = True
                 child.style    = discord.ButtonStyle.secondary
+
+    def _stop_task(self):
+        self.alive = False
+        if self._task and not self._task.done():
+            self._task.cancel()
+
+    async def on_timeout(self):
+        self._stop_task()
+        if self._msg:
+            try:
+                for child in self.children:
+                    child.disabled = True
+                await self._msg.edit(view=self)
+            except Exception:
+                pass
 
     # ── guard ──
     async def _guard(self, interaction: discord.Interaction) -> bool:
@@ -2149,24 +2194,26 @@ class SnakeView(discord.ui.View):
             return False
         return True
 
-    # ── bottoni ──
-    @discord.ui.button(label="​", style=discord.ButtonStyle.secondary, disabled=True, row=0)
+    # ── bottoni direzionali — defer silenzioso, nessun flash/lag ──
+    @discord.ui.button(label="\u200b", style=discord.ButtonStyle.secondary, disabled=True, row=0)
     async def _pad0(self, i: discord.Interaction, b: discord.ui.Button): pass
 
     @discord.ui.button(emoji="⬆️", style=discord.ButtonStyle.primary, row=0)
     async def btn_up(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._guard(interaction): return
-        self._set_dir(-1, 0); self._tick()
-        await interaction.response.edit_message(embed=self._make_embed(), view=self)
+        if not self.alive:
+            await interaction.response.defer(); return
+        self._set_dir(-1, 0)
+        await interaction.response.defer()
 
-    @discord.ui.button(label="​", style=discord.ButtonStyle.secondary, disabled=True, row=0)
+    @discord.ui.button(label="\u200b", style=discord.ButtonStyle.secondary, disabled=True, row=0)
     async def _pad1(self, i: discord.Interaction, b: discord.ui.Button): pass
 
     @discord.ui.button(emoji="🛑", style=discord.ButtonStyle.danger, row=0, custom_id="sn_quit")
     async def btn_quit(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._guard(interaction): return
-        self.alive = False
-        self._lock_buttons()
+        self._stop_task()
+        self._disable_dir_buttons()
         button.disabled = True
         e = discord.Embed(
             title=f"🛑 Quit  —  Score: {self.score}",
@@ -2180,28 +2227,36 @@ class SnakeView(discord.ui.View):
     @discord.ui.button(emoji="⬅️", style=discord.ButtonStyle.primary, row=1)
     async def btn_left(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._guard(interaction): return
-        self._set_dir(0, -1); self._tick()
-        await interaction.response.edit_message(embed=self._make_embed(), view=self)
+        if not self.alive:
+            await interaction.response.defer(); return
+        self._set_dir(0, -1)
+        await interaction.response.defer()
 
     @discord.ui.button(emoji="⬇️", style=discord.ButtonStyle.primary, row=1)
     async def btn_down(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._guard(interaction): return
-        self._set_dir(1, 0); self._tick()
-        await interaction.response.edit_message(embed=self._make_embed(), view=self)
+        if not self.alive:
+            await interaction.response.defer(); return
+        self._set_dir(1, 0)
+        await interaction.response.defer()
 
     @discord.ui.button(emoji="➡️", style=discord.ButtonStyle.primary, row=1)
     async def btn_right(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self._guard(interaction): return
-        self._set_dir(0, 1); self._tick()
-        await interaction.response.edit_message(embed=self._make_embed(), view=self)
+        if not self.alive:
+            await interaction.response.defer(); return
+        self._set_dir(0, 1)
+        await interaction.response.defer()
 
 
 @bot.tree.command(name="snakegame", description="Play Snake right here in Discord! 🐍")
 async def cmd_snakegame(interaction: discord.Interaction):
     view  = SnakeView(interaction.user)
     embed = view._make_embed()
-    embed.set_author(name="🎮 Use the buttons below to move")
+    embed.set_author(name="🎮 Snake starts in 1 second — use buttons to steer!")
     await interaction.response.send_message(embed=embed, view=view)
+    msg = await interaction.original_response()
+    await view.start(msg)
 
 
 # ──────────────────────────────────────────────
