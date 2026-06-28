@@ -53,6 +53,8 @@ USER_HISTORY:     dict[int, list] = {}
 USER_PERSONA:     dict[int, str]  = {}
 # Canale gallery per server { guild_id: channel_id }
 GALLERY_CHANNELS: dict[int, int]  = {}
+# Identità personalizzata per server { guild_id: { name, personality, owner_id } }
+SERVER_IDENTITY:  dict[int, dict] = {}
 # Statistiche server { guild_id: { uid: {images,texts,videos,audios} } }
 SERVER_STATS:     dict[int, dict] = {}
 
@@ -319,14 +321,28 @@ def set_memory(user_id: int, key: str, value: str):
         USER_MEMORY[user_id] = {}
     USER_MEMORY[user_id][key] = value
 
-def build_system_prompt(user_id: int, custom: str) -> str:
+def get_server_name(guild_id: int | None) -> str:
+    """Ritorna il nome del bot per questo server (se impostato), altrimenti il default."""
+    if guild_id and guild_id in SERVER_IDENTITY:
+        return SERVER_IDENTITY[guild_id]["name"]
+    return BOT_NAME
+
+def build_system_prompt(user_id: int, custom: str, guild_id: int | None = None) -> str:
     mem = get_memory(user_id)
     name_line = f"The user's name is {mem['name']}. " if mem.get("name") else ""
     extra = f" {custom}" if custom else ""
+    # Identità server ha priorità sulla persona utente
+    if guild_id and guild_id in SERVER_IDENTITY:
+        identity   = SERVER_IDENTITY[guild_id]
+        bot_n      = identity["name"]
+        persona_text = identity["personality"]
+    else:
+        bot_n      = BOT_NAME
+        persona_text = PERSONAS.get(USER_PERSONA.get(user_id, "default"), PERSONAS["default"])
     return (
-        f"Your name is Nov. You are a helpful AI assistant living inside Discord, "
-        f"powered by Pollinations AI. Always refer to yourself as Nov, never as ChatGPT, "
-        f"Claude, Gemini, or any other AI name. {name_line}{extra}"
+        f"Your name is {bot_n}. You are a helpful AI assistant living inside Discord, "
+        f"powered by Pollinations AI. Always refer to yourself as {bot_n}, never as ChatGPT, "
+        f"Claude, Gemini, or any other AI name. {name_line}{persona_text}{extra}"
     )
 
 def auth_headers(key) -> dict:
@@ -609,7 +625,7 @@ async def cmd_text(interaction: discord.Interaction, prompt: str, system: str = 
         return
 
     model  = get_model(uid, "text")
-    system = build_system_prompt(interaction.user.id, system)
+    system = build_system_prompt(interaction.user.id, system, interaction.guild_id)
     await interaction.response.defer(thinking=True)
 
     try:
@@ -711,7 +727,7 @@ async def on_message(message: discord.Message):
         uid        = message.author.id
         model      = get_model(uid, "text")
         key        = get_key(uid)
-        sys_prompt = build_system_prompt(uid, "")
+        sys_prompt = build_system_prompt(uid, "", message.guild.id if message.guild else None)
         CHAT_THREADS[message.channel.id] = {
             "user_id": uid,
             "model":   model,
@@ -1064,7 +1080,7 @@ async def cmd_privtext(interaction: discord.Interaction, prompt: str, system: st
         return
 
     model      = get_model(uid, "text")
-    sys_prompt = build_system_prompt(uid, system)
+    sys_prompt = build_system_prompt(uid, system, interaction.guild_id)
     await interaction.response.defer(thinking=True, ephemeral=in_guild_text_channel)
 
     try:
@@ -1212,7 +1228,7 @@ async def cmd_ask(interaction: discord.Interaction, prompt: str):
     await interaction.response.defer(thinking=True)
     model      = get_model(uid, "text")
     key        = get_key(uid)
-    sys_prompt = build_system_prompt(uid, "")
+    sys_prompt = build_system_prompt(uid, "", interaction.guild_id)
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -1705,7 +1721,7 @@ async def cmd_privchat(interaction: discord.Interaction):
     )
 
     await interaction.response.defer(thinking=True, ephemeral=in_guild_text_channel)
-    sys_prompt = build_system_prompt(uid, "")
+    sys_prompt = build_system_prompt(uid, "", interaction.guild_id)
 
     try:
         if in_guild_text_channel:
@@ -1812,10 +1828,381 @@ async def cmd_help(interaction: discord.Interaction):
             "`/translate [text] [lang]` · Translate to any language\n"
             "`/summarize [text] [style]` · 4 styles: bullets / paragraph / sentence / TL;DR\n"
             "`/poll [topic]` · AI poll with auto reactions 🇦🇧🇨🇩\n"
-            "`/roast [target]` · Harmless but spicy roast 🔥"
+            "`/roast [target]` · Harmless but spicy roast 🔥\n"
+            "`/matrix [message]` · Animated Matrix rain 💚\n"
+            "`/event [title] [date]` · AI-generated event announcement 📅\n"
+            "`/snakegame` · Play Snake with buttons 🐍"
+        ), inline=False)
+    embed.add_field(name="🎭 Server Identity",
+        value=(
+            "`/globalidentity [name] [personality]` · Give NovAI a custom name & persona in this server\n"
+            "`/resetidentity` · Revert to default *(only the activator)*"
         ), inline=False)
     embed.set_footer(text=f"Nov v{BOT_VERSION} · Works in DMs too! · enter.pollinations.ai")
     await interaction.response.send_message(embed=embed)
+
+
+# ──────────────────────────────────────────────
+#  /globalidentity — nome e personalità per server
+# ──────────────────────────────────────────────
+@bot.tree.command(name="globalidentity", description="Give NovAI a custom name & personality in this server")
+@app_commands.describe(
+    name="Bot name for this server (e.g. 'Aria', 'Max', 'Nexus')",
+    personality="Custom personality (e.g. 'You are a snarky hacker who loves 90s references.')"
+)
+async def cmd_globalidentity(interaction: discord.Interaction, name: str, personality: str):
+    if not interaction.guild:
+        await interaction.response.send_message(
+            embed=discord.Embed(title="❌ Server only", description="This command only works in a server.", color=0xED4245),
+            ephemeral=True
+        )
+        return
+
+    gid = interaction.guild.id
+
+    # Già impostata da qualcun altro?
+    if gid in SERVER_IDENTITY and SERVER_IDENTITY[gid]["owner_id"] != interaction.user.id:
+        owner_id = SERVER_IDENTITY[gid]["owner_id"]
+        current  = SERVER_IDENTITY[gid]["name"]
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="🔒 Identity already set",
+                description=(
+                    f"This server already has a custom identity: **{current}**\n"
+                    f"Set by <@{owner_id}>. Only they can change or reset it with `/resetidentity`."
+                ),
+                color=0xFEE75C
+            ), ephemeral=True
+        )
+        return
+
+    SERVER_IDENTITY[gid] = {
+        "name":        name[:32].strip(),
+        "personality": personality[:500].strip(),
+        "owner_id":    interaction.user.id,
+    }
+
+    embed = discord.Embed(
+        title=f"✅ Identity set — {name}",
+        description=(
+            f"In this server, NovAI will now answer as **{name}**.\n\n"
+            f"**Personality:**\n> {personality[:280]}{'…' if len(personality) > 280 else ''}\n\n"
+            f"*Only you can change or remove this with `/resetidentity`.*"
+        ),
+        color=0x57F287
+    )
+    embed.set_footer(text=f"Set by {interaction.user.display_name}")
+    await interaction.response.send_message(embed=embed)
+
+
+# ──────────────────────────────────────────────
+#  /resetidentity — rimuove identità del server
+# ──────────────────────────────────────────────
+@bot.tree.command(name="resetidentity", description="Reset NovAI's custom server identity (only the activator can do this)")
+async def cmd_resetidentity(interaction: discord.Interaction):
+    if not interaction.guild:
+        await interaction.response.send_message(
+            embed=discord.Embed(title="❌ Server only", description="This command only works in a server.", color=0xED4245),
+            ephemeral=True
+        )
+        return
+
+    gid = interaction.guild.id
+
+    if gid not in SERVER_IDENTITY:
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="ℹ️ No custom identity",
+                description="This server doesn't have a custom identity set.",
+                color=BOT_COLOR
+            ), ephemeral=True
+        )
+        return
+
+    identity = SERVER_IDENTITY[gid]
+    if identity["owner_id"] != interaction.user.id:
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="🔒 Not authorized",
+                description=f"Only <@{identity['owner_id']}> can reset the identity for this server.",
+                color=0xED4245
+            ), ephemeral=True
+        )
+        return
+
+    old_name = identity["name"]
+    del SERVER_IDENTITY[gid]
+
+    await interaction.response.send_message(
+        embed=discord.Embed(
+            title="🔄 Identity reset",
+            description=f"**{old_name}** removed. NovAI is back to its default identity in this server.",
+            color=0x57F287
+        )
+    )
+
+
+# ──────────────────────────────────────────────
+#  /matrix — pioggia Matrix animata con ANSI
+# ──────────────────────────────────────────────
+_MATRIX_CHARS = list("アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン01234567890101110100101")
+
+def _matrix_frame(cols: int = 18, rows: int = 9, reveal: str = "") -> str:
+    """Genera un frame della pioggia Matrix in ANSI Discord."""
+    mid = rows // 2
+    lines = []
+    for r in range(rows):
+        if reveal and r == mid:
+            msg  = reveal[:cols]
+            pad  = (cols - len(msg)) // 2
+            side = cols - pad - len(msg)
+            left  = "".join(random.choice(_MATRIX_CHARS) for _ in range(pad))
+            right = "".join(random.choice(_MATRIX_CHARS) for _ in range(side))
+            line = (
+                f"\u001b[2;32m{left}\u001b[0m"
+                f"\u001b[1;37m {msg} \u001b[0m"
+                f"\u001b[2;32m{right}\u001b[0m"
+            )
+        else:
+            raw = "".join(random.choice(_MATRIX_CHARS) for _ in range(cols))
+            # Colonna "testa" casuale più brillante
+            head = random.randint(0, cols - 1)
+            line = ""
+            for i, ch in enumerate(raw):
+                if i == head:
+                    line += f"\u001b[1;32m{ch}\u001b[0m"
+                elif random.random() > 0.55:
+                    line += f"\u001b[32m{ch}\u001b[0m"
+                else:
+                    line += f"\u001b[2;32m{ch}\u001b[0m"
+        lines.append(line)
+    return "```ansi\n" + "\n".join(lines) + "\n```"
+
+
+@bot.tree.command(name="matrix", description="Display an animated Matrix rain in the channel 💚")
+@app_commands.describe(message="Secret message to reveal at the end (optional)")
+async def cmd_matrix(interaction: discord.Interaction, message: str = ""):
+    await interaction.response.defer()
+
+    reveal_text = message.strip()[:16] if message.strip() else "SYSTEM ONLINE"
+
+    # Frame 1 — invio iniziale
+    msg = await interaction.followup.send(_matrix_frame())
+
+    # Frame 2-5 — animazione
+    for _ in range(4):
+        await asyncio.sleep(0.85)
+        try:
+            await msg.edit(content=_matrix_frame())
+        except Exception:
+            break
+
+    # Frame finale — rivela messaggio
+    await asyncio.sleep(0.85)
+    final_frame = _matrix_frame(reveal=reveal_text)
+    caption = f"\n-# 🔓 `{reveal_text}`" if message.strip() else "\n-# 💚 Wake up, Neo…"
+    try:
+        await msg.edit(content=final_frame + caption)
+    except Exception:
+        pass
+
+
+# ──────────────────────────────────────────────
+#  /event — annuncio evento generato da AI
+# ──────────────────────────────────────────────
+@bot.tree.command(name="event", description="Create an AI-powered event announcement 🎉")
+@app_commands.describe(
+    title="Event name",
+    date="When? (e.g. 'Saturday July 12th at 8PM UTC')",
+    details="Extra details about the event (optional)"
+)
+async def cmd_event(interaction: discord.Interaction, title: str, date: str, details: str = ""):
+    await interaction.response.defer(thinking=True)
+    uid = interaction.user.id
+    key = get_key(uid)
+
+    ai_prompt = (
+        f"Write a hype Discord event announcement for '{title}' happening on {date}. "
+        f"{'Additional details: ' + details if details else ''} "
+        "Make it enthusiastic, use 2-3 relevant emojis, max 120 words. "
+        "Return ONLY the announcement body text, nothing else."
+    )
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            data = await api_post_json(session, f"{BASE_URL}/chat/completions", {
+                "model":    "openai",
+                "messages": [{"role": "user", "content": ai_prompt}],
+                "max_tokens": 220,
+            }, key)
+        ai_text = data["choices"][0]["message"]["content"].strip()
+    except Exception:
+        ai_text = details or "Join us for this special event!"
+
+    colors = [0x5865F2, 0xFEE75C, 0x57F287, 0xEB459E, 0xED4245]
+    embed = discord.Embed(
+        title=f"📅  {title}",
+        description=ai_text,
+        color=random.choice(colors)
+    )
+    embed.add_field(name="🗓️ When",  value=f"`{date}`",                   inline=True)
+    embed.add_field(name="📢 Host",   value=interaction.user.mention,       inline=True)
+    if interaction.guild:
+        embed.add_field(name="📍 Where", value=interaction.guild.name,         inline=True)
+    embed.set_footer(text="React below if you're coming! ✅ = yes · ❌ = no · 🤔 = maybe")
+
+    followup_msg = await interaction.followup.send(embed=embed)
+    for emoji in ["✅", "❌", "🤔"]:
+        try:
+            await followup_msg.add_reaction(emoji)
+        except Exception:
+            pass
+
+
+# ──────────────────────────────────────────────
+#  /snakegame — Snake giocabile con bottoni Discord
+# ──────────────────────────────────────────────
+_SN_EMPTY = "⬛"
+_SN_HEAD  = "💚"
+_SN_BODY  = "🟩"
+_SN_FOOD  = "🍎"
+_SN_ROWS  = 8
+_SN_COLS  = 10
+
+
+class SnakeView(discord.ui.View):
+    def __init__(self, player: discord.Member | discord.User):
+        super().__init__(timeout=300)   # 5 min di inattività
+        self.player    = player
+        self.snake     = [(4, 5), (4, 4), (4, 3)]  # (row, col)
+        self.direction = (0, 1)   # → destra
+        self._next_dir = (0, 1)
+        self.food      = self._spawn_food()
+        self.score     = 0
+        self.alive     = True
+
+    # ── helpers ──
+    def _spawn_food(self) -> tuple[int, int]:
+        while True:
+            pos = (random.randint(0, _SN_ROWS - 1), random.randint(0, _SN_COLS - 1))
+            if pos not in self.snake:
+                return pos
+
+    def _render(self) -> str:
+        grid = [[_SN_EMPTY] * _SN_COLS for _ in range(_SN_ROWS)]
+        grid[self.food[0]][self.food[1]] = _SN_FOOD
+        for i, (r, c) in enumerate(self.snake):
+            grid[r][c] = _SN_HEAD if i == 0 else _SN_BODY
+        return "\n".join("".join(row) for row in grid)
+
+    def _make_embed(self) -> discord.Embed:
+        if self.alive:
+            e = discord.Embed(
+                title=f"🐍 Snake  —  Score: {self.score}",
+                description=self._render(),
+                color=0x57F287
+            )
+        else:
+            e = discord.Embed(
+                title=f"💀 Game Over  —  Score: {self.score}",
+                description=self._render(),
+                color=0xED4245
+            )
+        e.set_footer(text=f"{self.player.display_name}  •  ⬆️⬇️⬅️➡️ to move  •  🛑 to quit")
+        return e
+
+    def _tick(self):
+        """Avanza di un passo nella direzione corrente."""
+        self.direction = self._next_dir
+        dr, dc  = self.direction
+        hr, hc  = self.snake[0]
+        new_h   = (hr + dr, hc + dc)
+
+        # Muri o auto-collisione
+        if not (0 <= new_h[0] < _SN_ROWS and 0 <= new_h[1] < _SN_COLS) or new_h in self.snake:
+            self.alive = False
+            self._lock_buttons()
+            return
+
+        self.snake.insert(0, new_h)
+        if new_h == self.food:
+            self.score += 1
+            self.food = self._spawn_food()
+        else:
+            self.snake.pop()
+
+    def _set_dir(self, dr: int, dc: int):
+        """Imposta la direzione evitando il reverse."""
+        if (dr, dc) != (-self.direction[0], -self.direction[1]):
+            self._next_dir = (dr, dc)
+
+    def _lock_buttons(self):
+        for child in self.children:
+            if isinstance(child, discord.ui.Button) and child.custom_id != "sn_quit":
+                child.disabled = True
+                child.style    = discord.ButtonStyle.secondary
+
+    # ── guard ──
+    async def _guard(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.player.id:
+            await interaction.response.send_message("This isn't your game! 🎮", ephemeral=True)
+            return False
+        return True
+
+    # ── bottoni ──
+    @discord.ui.button(label="​", style=discord.ButtonStyle.secondary, disabled=True, row=0)
+    async def _pad0(self, i: discord.Interaction, b: discord.ui.Button): pass
+
+    @discord.ui.button(emoji="⬆️", style=discord.ButtonStyle.primary, row=0)
+    async def btn_up(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._guard(interaction): return
+        self._set_dir(-1, 0); self._tick()
+        await interaction.response.edit_message(embed=self._make_embed(), view=self)
+
+    @discord.ui.button(label="​", style=discord.ButtonStyle.secondary, disabled=True, row=0)
+    async def _pad1(self, i: discord.Interaction, b: discord.ui.Button): pass
+
+    @discord.ui.button(emoji="🛑", style=discord.ButtonStyle.danger, row=0, custom_id="sn_quit")
+    async def btn_quit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._guard(interaction): return
+        self.alive = False
+        self._lock_buttons()
+        button.disabled = True
+        e = discord.Embed(
+            title=f"🛑 Quit  —  Score: {self.score}",
+            description=self._render(),
+            color=0xFEE75C
+        )
+        e.set_footer(text=f"{self.player.display_name}  •  Better luck next time!")
+        await interaction.response.edit_message(embed=e, view=self)
+        self.stop()
+
+    @discord.ui.button(emoji="⬅️", style=discord.ButtonStyle.primary, row=1)
+    async def btn_left(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._guard(interaction): return
+        self._set_dir(0, -1); self._tick()
+        await interaction.response.edit_message(embed=self._make_embed(), view=self)
+
+    @discord.ui.button(emoji="⬇️", style=discord.ButtonStyle.primary, row=1)
+    async def btn_down(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._guard(interaction): return
+        self._set_dir(1, 0); self._tick()
+        await interaction.response.edit_message(embed=self._make_embed(), view=self)
+
+    @discord.ui.button(emoji="➡️", style=discord.ButtonStyle.primary, row=1)
+    async def btn_right(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self._guard(interaction): return
+        self._set_dir(0, 1); self._tick()
+        await interaction.response.edit_message(embed=self._make_embed(), view=self)
+
+
+@bot.tree.command(name="snakegame", description="Play Snake right here in Discord! 🐍")
+async def cmd_snakegame(interaction: discord.Interaction):
+    view  = SnakeView(interaction.user)
+    embed = view._make_embed()
+    embed.set_author(name="🎮 Use the buttons below to move")
+    await interaction.response.send_message(embed=embed, view=view)
+
 
 # ──────────────────────────────────────────────
 #  START
