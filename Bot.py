@@ -47,16 +47,10 @@ USER_MODELS:      dict[int, dict] = {}
 USER_MEMORY:      dict[int, dict] = {}
 # Thread di chat attivi { thread_id: { user_id, model, history } }
 CHAT_THREADS:     dict[int, dict] = {}
-# Storico generazioni per utente (max 20) { uid: [{type,prompt,url,model,ts}] }
-USER_HISTORY:     dict[int, list] = {}
 # Persona attiva per utente { uid: "persona_name" }
 USER_PERSONA:     dict[int, str]  = {}
-# Canale gallery per server { guild_id: channel_id }
-GALLERY_CHANNELS: dict[int, int]  = {}
 # Identità personalizzata per server { guild_id: { name, personality, owner_id } }
 SERVER_IDENTITY:  dict[int, dict] = {}
-# Statistiche server { guild_id: { uid: {images,texts,videos,audios} } }
-SERVER_STATS:     dict[int, dict] = {}
 
 # Persona presets
 PERSONAS = {
@@ -119,6 +113,7 @@ MODEL_DISPLAY_TO_ID = {
     "MIDIjourney":                         "midijourney",
     "MIDIjourney Large":                   "midijourney-large",
     "Z.ai GLM-5.2":                        "glm",
+    "Phi-4":                               "phi",
     "Polly by @Itachi-1824":               "polly",
     # PAID (box gialla)
     "Gemini 2.5 Flash Lite (PAID)":        "gemini-fast",
@@ -233,7 +228,7 @@ KNOWN_MODELS = {
         "Perplexity Sonar", "Perplexity Sonar Pro", "Perplexity Sonar Reasoning",
         "Moonshot Kimi K2.6", "Moonshot Kimi K2.7 Code",
         "MIDIjourney", "MIDIjourney Large",
-        "Z.ai GLM-5.2", "Polly by @Itachi-1824",
+        "Phi-4", "Z.ai GLM-5.2", "Polly by @Itachi-1824",
         # PAID (box gialla)
         "Gemini 2.5 Flash Lite (PAID)", "Gemini 3.1 Flash Lite (PAID)",
         "Gemini 3.1 Flash Lite Search (PAID)", "Google Gemini 2.5 Flash Search (PAID)",
@@ -652,9 +647,9 @@ async def cmd_text(interaction: discord.Interaction, prompt: str, system: str = 
 
         # Risposta silenziosa all'interazione
         in_guild_text_channel = interaction.guild is not None and isinstance(interaction.channel, discord.TextChannel)
+        bot_display_name = get_server_name(interaction.guild_id)
 
         if in_guild_text_channel:
-            # Comportamento originale: apre un thread nel canale del server
             await interaction.followup.send("💬 Opening chat thread...", ephemeral=True)
 
             channel = interaction.channel
@@ -662,22 +657,20 @@ async def cmd_text(interaction: discord.Interaction, prompt: str, system: str = 
                 description=f"**{interaction.user.display_name}:** {prompt}",
                 color=BOT_COLOR
             )
-            embed_intro.set_author(name=f"Nov Chat - {model_name}")
+            embed_intro.set_author(name=f"{bot_display_name} Chat - {model_name}")
             embed_intro.set_footer(text="Thread opened - just type here to keep chatting!")
             msg = await channel.send(embed=embed_intro)
 
             target_channel = await msg.create_thread(
-                name=f"Nov - {interaction.user.display_name} - {prompt[:40]}",
+                name=f"{bot_display_name} - {interaction.user.display_name} - {prompt[:40]}",
                 auto_archive_duration=60
             )
         else:
-            # DM, DM di gruppo o canale senza supporto thread: risponde qui direttamente,
-            # la conversazione continua semplicemente scrivendo in questo stesso canale
             embed_intro = discord.Embed(
                 description=f"**{interaction.user.display_name}:** {prompt}",
                 color=BOT_COLOR
             )
-            embed_intro.set_author(name=f"Nov Chat - {model_name}")
+            embed_intro.set_author(name=f"{bot_display_name} Chat - {model_name}")
             embed_intro.set_footer(text="Just keep typing here to continue - say /close to end.")
             await interaction.followup.send(embed=embed_intro)
             target_channel = interaction.channel
@@ -1724,9 +1717,10 @@ async def cmd_privchat(interaction: discord.Interaction):
     sys_prompt = build_system_prompt(uid, "", interaction.guild_id)
 
     try:
+        bot_display_name = get_server_name(interaction.guild_id)
         if in_guild_text_channel:
             thread = await interaction.channel.create_thread(
-                name=f"🔒 Nov · {interaction.user.display_name}",
+                name=f"🔒 {bot_display_name} · {interaction.user.display_name}",
                 type=discord.ChannelType.private_thread,
                 invitable=False,
                 auto_archive_duration=60,
@@ -1735,11 +1729,11 @@ async def cmd_privchat(interaction: discord.Interaction):
 
             greeting = (
                 f"Hey {interaction.user.display_name}! 👋\n"
-                "This is your private space with Nov. Just type here — I'll reply to everything.\n"
+                f"This is your private space with {bot_display_name}. Just type here — I'll reply to everything.\n"
                 "Use `/reset` to end the session."
             )
             intro = discord.Embed(description=f"🔒 **Private chat started**\n\n{greeting}", color=0x2B2D31)
-            intro.set_author(name=f"Nov Chat (Private) — {model_name}")
+            intro.set_author(name=f"{bot_display_name} Chat (Private) — {model_name}")
             await thread.send(embed=intro)
 
             CHAT_THREADS[thread.id] = {
@@ -1754,14 +1748,13 @@ async def cmd_privchat(interaction: discord.Interaction):
             await interaction.followup.send(f"🔒 Private thread opened! → {thread.mention}", ephemeral=True)
 
         else:
-            # In DM è già privato — attiva semplicemente la sessione
             greeting = (
                 f"Hey {interaction.user.display_name}! 👋\n"
-                "Private chat active. Just type here — I'll reply to everything.\n"
+                f"Private chat active. Just type here — I'll reply to everything.\n"
                 "Use `/reset` to end the session."
             )
             intro = discord.Embed(description=f"🔒 **Private chat started**\n\n{greeting}", color=0x2B2D31)
-            intro.set_author(name=f"Nov Chat (Private) — {model_name}")
+            intro.set_author(name=f"{bot_display_name} Chat (Private) — {model_name}")
             await interaction.followup.send(embed=intro)
 
             CHAT_THREADS[interaction.channel.id] = {
