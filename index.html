@@ -790,7 +790,6 @@
     <li><a href="#features">Features</a></li>
     <li><a href="#faq">FAQ</a></li>
     <li><a href="https://github.com/Nov-AI/nov-ai.github.io" target="_blank" class="btn-nav">GitHub ↗</a></li>
-    <li><a href="https://nov-ai.github.io/chat/" target="_blank" class="btn-nav">Web App</a></li>
     <li><a href="https://discord.com/oauth2/authorize?client_id=1520183989200093205&permissions=8&integration_type=0&scope=bot+applications.commands" target="_blank" class="btn-add-nav">Add to Discord</a></li>
   </ul>
 </nav>
@@ -809,8 +808,8 @@
   <p class="hero-sub">Generate <span>text</span>, <span>images</span>, <span>audio</span>, and <span>video</span> — directly inside your Discord server. No API key required to get started.</p>
 
   <div class="hero-stats">
-    <span class="hero-stat">300+ models</span>
-    <span class="hero-stat">10 providers</span>
+    <span class="hero-stat">50+ models</span>
+    <span class="hero-stat">2 providers</span>
     <span class="hero-stat">Works in DMs</span>
     <span class="hero-stat">Free to use</span>
   </div>
@@ -823,10 +822,6 @@
     <a href="https://github.com/Nov-AI/nov-ai.github.io" target="_blank" class="btn-ghost">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
       View Source
-    </a>
-    <a href="https://nov-ai.github.io/chat/" target="_blank" class="btn-ghost">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9l3 3-3 3"/><path d="M13 15h3"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg>
-      Open Web App
     </a>
   </div>
 </div>
@@ -959,7 +954,7 @@
         </div>
         <div class="cmd-card">
           <div class="cmd-name">/connect [provider] <span class="cmd-badge badge-free">free</span></div>
-          <div class="cmd-desc">Link any provider — e.g. <code style="font-family:var(--mono);font-size:11px;">/connect provider:claude</code>. Pollinations uses free device-flow, others open a secure key modal.</div>
+          <div class="cmd-desc">Link any provider — e.g. <code style="font-family:var(--mono);font-size:11px;">/connect provider:sixfinger</code>. Pollinations uses free device-flow, SixFinger opens a secure key modal.</div>
         </div>
         <div class="cmd-card">
           <div class="cmd-name">/disconnect [provider] <span class="cmd-badge badge-free">free</span></div>
@@ -1013,7 +1008,7 @@
 <section id="providers">
   <div class="section-header fade-in">
     <p class="section-label">Providers</p>
-    <p class="section-note">10 providers · Switch anytime with <code style="font-family:var(--mono);font-size:11px;background:var(--surface);border:1px solid var(--border);padding:2px 6px;border-radius:2px;">/connect provider:</code></p>
+    <p class="section-note">2 providers · Switch anytime with <code style="font-family:var(--mono);font-size:11px;background:var(--surface);border:1px solid var(--border);padding:2px 6px;border-radius:2px;">/connect provider:</code></p>
   </div>
   <div class="features-grid fade-in">
     <div class="feature-card">
@@ -1022,49 +1017,9 @@
       <div class="feature-desc">Default provider. Free device-flow login, 50+ models across text/image/audio/video. No key needed.</div>
     </div>
     <div class="feature-card">
-      <span class="feature-icon">6️⃣</span>
+      <img src="https://sfapi.pythonanywhere.com/static/sixfinger-logo.jpg" alt="SixFinger" class="feature-icon" style="width:28px;height:28px;object-fit:contain;border-radius:6px;"/>
       <div class="feature-title">SixFinger API</div>
       <div class="feature-desc">OpenAI-compatible gateway with Claude, GPT-5, GLM-5, DeepSeek and more. Free tier: 1000 req/month.</div>
-    </div>
-    <div class="feature-card">
-      <span class="feature-icon">▲</span>
-      <div class="feature-title">Vercel AI Gateway</div>
-      <div class="feature-desc">206+ models from every major lab — Anthropic, OpenAI, Google, xAI, Mistral, DeepSeek, Alibaba and more. No key required.</div>
-    </div>
-    <div class="feature-card">
-      <span class="feature-icon">💧</span>
-      <div class="feature-title">Aqua API</div>
-      <div class="feature-desc">50+ free-tier models including Claude Opus 4.8, GPT-5.5, Gemini 3.5, Grok — some require approval.</div>
-    </div>
-    <div class="feature-card">
-      <span class="feature-icon">🟢</span>
-      <div class="feature-title">OpenAI</div>
-      <div class="feature-desc">Bring your own key for GPT-5.5, o3, DALL-E 3, GPT Image, Whisper, and Sora video.</div>
-    </div>
-    <div class="feature-card">
-      <span class="feature-icon">🟠</span>
-      <div class="feature-title">Anthropic</div>
-      <div class="feature-desc">Bring your own key for Claude Opus 4.8, Sonnet 4.6, and Haiku 4.5.</div>
-    </div>
-    <div class="feature-card">
-      <span class="feature-icon">🔵</span>
-      <div class="feature-title">Google Gemini</div>
-      <div class="feature-desc">Bring your own key for Gemini 3.5 Flash, 3.1 Pro, Imagen 4, and Veo 3.1 video.</div>
-    </div>
-    <div class="feature-card">
-      <span class="feature-icon">🌐</span>
-      <div class="feature-title">LLM7</div>
-      <div class="feature-desc">Free gateway with DeepSeek, Qwen, GPT-4o mini, Claude, Mistral, and FLUX image generation. No key required.</div>
-    </div>
-    <div class="feature-card">
-      <span class="feature-icon">🔴</span>
-      <div class="feature-title">Mistral AI</div>
-      <div class="feature-desc">Bring your own key for Mistral Large 3, Codestral, and Pixtral vision models.</div>
-    </div>
-    <div class="feature-card">
-      <span class="feature-icon">⚫</span>
-      <div class="feature-title">xAI / Grok</div>
-      <div class="feature-desc">Bring your own key for Grok 4.3, Grok Imagine image generation, and Grok video.</div>
     </div>
   </div>
 </section>
