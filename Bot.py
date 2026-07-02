@@ -530,8 +530,7 @@ def build_system_prompt(user_id: int, custom: str, guild_id: int | None = None) 
         bot_n        = BOT_NAME
         persona_text = PERSONAS.get(USER_PERSONA.get(user_id, "default"), PERSONAS["default"])
     return (
-        f"Your name is {bot_n}. You are a helpful AI assistant living inside Discord, "
-        f"powered by Pollinations AI. Always refer to yourself as {bot_n}, never as ChatGPT, "
+        f"Your name is {bot_n}. You are a helpful Open Source AI assistant living inside Discord. Always refer to yourself as {bot_n}, never as ChatGPT, "
         f"Claude, Gemini, or any other AI name. {name_line}{persona_text}{extra}"
     )
 
